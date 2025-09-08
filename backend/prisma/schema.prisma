@@ -1,0 +1,126 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  password          String
+  firstName         String?
+  lastName          String?
+  subscriptionTier  SubscriptionTier @default(FREE)
+  isEmailVerified   Boolean  @default(false)
+  refreshToken      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  lastLoginAt       DateTime?
+  
+  // Relations
+  videos            Video[]
+  generationJobs    GenerationJob[]
+  
+  @@map("users")
+}
+
+model Video {
+  id          String   @id @default(cuid())
+  userId      String
+  topic       String
+  tone        Tone
+  customTone  String?
+  status      VideoStatus @default(PENDING)
+  script      String?
+  audioUrl    String?
+  videoUrl    String?
+  thumbnailUrl String?
+  duration    Int? // in seconds
+  fileSize    Int? // in bytes
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  generationJobs  GenerationJob[]
+  
+  @@map("videos")
+}
+
+model GenerationJob {
+  id          String    @id @default(cuid())
+  userId      String
+  videoId     String
+  status      JobStatus @default(PENDING)
+  stage       ProcessingStage @default(SCRIPT_GENERATION)
+  progress    Int       @default(0) // 0-100
+  errorLogs   String[]  @default([])
+  metadata    Json?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  
+  @@map("generation_jobs")
+}
+
+model ApiUsage {
+  id          String   @id @default(cuid())
+  userId      String
+  service     String   // "openai", "elevenlabs", "pika", "runwayml"
+  endpoint    String
+  tokensUsed  Int?
+  cost        Decimal? @db.Decimal(10, 4)
+  createdAt   DateTime @default(now())
+  
+  @@map("api_usage")
+}
+
+enum SubscriptionTier {
+  FREE
+  PREMIUM
+  UNLIMITED
+}
+
+enum Tone {
+  FUNNY
+  SERIOUS
+  POETIC
+  CUSTOM
+}
+
+enum VideoStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+  RETRYING
+}
+
+enum ProcessingStage {
+  SCRIPT_GENERATION
+  VOICE_SYNTHESIS
+  VIDEO_GENERATION
+  VIDEO_PROCESSING
+  FINALIZATION
+}

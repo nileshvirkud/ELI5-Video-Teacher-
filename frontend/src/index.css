@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  }
+  
+  body {
+    @apply antialiased;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-medium rounded-lg 
+           hover:from-blue-600 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 
+           shadow-lg hover:shadow-xl focus:outline-none focus:ring-4 focus:ring-blue-300;
+  }
+  
+  .btn-secondary {
+    @apply px-6 py-3 bg-white text-gray-700 border border-gray-300 font-medium rounded-lg 
+           hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 
+           focus:outline-none focus:ring-4 focus:ring-gray-200;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300;
+  }
+  
+  .input-field {
+    @apply w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 
+           focus:border-transparent transition-all duration-200 placeholder-gray-400;
+  }
+  
+  .input-error {
+    @apply border-red-300 focus:ring-red-500;
+  }
+  
+  .progress-bar {
+    @apply w-full bg-gray-200 rounded-full h-3 overflow-hidden;
+  }
+  
+  .progress-fill {
+    @apply h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-300 ease-out;
+  }
+  
+  .status-badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium;
+  }
+  
+  .status-pending {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+  
+  .status-processing {
+    @apply bg-blue-100 text-blue-800;
+  }
+  
+  .status-completed {
+    @apply bg-green-100 text-green-800;
+  }
+  
+  .status-failed {
+    @apply bg-red-100 text-red-800;
+  }
+  
+  .status-cancelled {
+    @apply bg-gray-100 text-gray-800;
+  }
+}
+
+@layer utilities {
+  .animate-pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  
+  .animate-bounce-gentle {
+    animation: bounce 2s infinite;
+  }
+  
+  .text-gradient {
+    @apply bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent;
+  }
+  
+  .bg-pattern {
+    background-image: 
+      radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.3) 1px, transparent 0);
+    background-size: 20px 20px;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(45deg, #2563eb, #7c3aed);
+}
+
+/* Loading animations */
+@keyframes shimmer {
+  0% {
+    background-position: -468px 0;
+  }
+  100% {
+    background-position: 468px 0;
+  }
+}
+
+.shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 400% 100%;
+}
+
+/* Video player custom styles */
+.video-player {
+  @apply relative overflow-hidden rounded-lg bg-black;
+}
+
+.video-controls {
+  @apply absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent 
+         p-4 opacity-0 hover:opacity-100 transition-opacity duration-200;
+}
+
+/* Responsive video aspect ratio */
+.video-aspect {
+  aspect-ratio: 16 / 9;
+}
+
+/* Child-friendly color palette */
+.color-fun-1 { background: linear-gradient(135deg, #FFB3BA, #BAFFC9); }
+.color-fun-2 { background: linear-gradient(135deg, #BAE1FF, #FFFFBA); }
+.color-fun-3 { background: linear-gradient(135deg, #FFD1DC, #D1FFBD); }
+.color-fun-4 { background: linear-gradient(135deg, #AEC6CF, #FFB7CE); }
+
+/* Toast notification positioning */
+.toast-container {
+  @apply fixed top-4 right-4 z-50 space-y-2;
+}
+
+.toast {
+  @apply bg-white border-l-4 rounded-lg shadow-lg p-4 transform transition-all duration-300 ease-in-out;
+}
+
+.toast-success {
+  @apply border-green-500;
+}
+
+.toast-error {
+  @apply border-red-500;
+}
+
+.toast-info {
+  @apply border-blue-500;
+}
+
+.toast-warning {
+  @apply border-yellow-500;
+}
