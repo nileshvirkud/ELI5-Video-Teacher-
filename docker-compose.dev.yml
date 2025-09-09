@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # Development Database
+  database:
+    image: postgres:15-alpine
+    container_name: eli5-database-dev
+    environment:
+      POSTGRES_USER: eli5user
+      POSTGRES_PASSWORD: eli5password
+      POSTGRES_DB: eli5_video_teacher_dev
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - eli5-dev-network
+
+  # Development Redis
+  redis:
+    image: redis:7-alpine
+    container_name: eli5-redis-dev
+    ports:
+      - "6379:6379"
+    networks:
+      - eli5-dev-network
+
+  # Backend in Development Mode
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: eli5-backend-dev
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=postgresql://eli5user:eli5password@database:5432/eli5_video_teacher_dev
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-jwt-secret
+      - JWT_REFRESH_SECRET=dev-refresh-secret
+      - LOG_LEVEL=debug
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - backend_dev_temp:/app/temp
+    ports:
+      - "3000:3000"
+      - "9229:9229" # Debug port
+    depends_on:
+      - database
+      - redis
+    networks:
+      - eli5-dev-network
+    command: ["npm", "run", "dev"]
+
+  # Frontend in Development Mode
+  frontend-dev:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: eli5-frontend-dev
+    environment:
+      - VITE_API_URL=http://localhost:3000/api
+      - VITE_WS_URL=http://localhost:3000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3001:5173" # Vite dev server default port
+    depends_on:
+      - backend-dev
+    networks:
+      - eli5-dev-network
+    command: ["npm", "run", "dev", "--", "--host"]
+
+  # Mailhog for testing emails (development only)
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: eli5-mailhog-dev
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+    networks:
+      - eli5-dev-network
+
+  # Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: eli5-redis-commander-dev
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - eli5-dev-network
+
+volumes:
+  postgres_dev_data:
+  backend_dev_temp:
+
+networks:
+  eli5-dev-network:
+    driver: bridge

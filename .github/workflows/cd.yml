@@ -1,0 +1,273 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_run:
+    workflows: ["CI Pipeline"]
+    branches: [main]
+    types: [completed]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event.workflow_run.conclusion == 'success'
+    environment:
+      name: staging
+      url: https://staging.eli5videoteacher.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy to EKS Staging
+        run: |
+          # Update kubeconfig
+          aws eks update-kubeconfig --name eli5-staging-cluster --region ${{ vars.AWS_REGION }}
+          
+          # Deploy using Helm
+          helm upgrade --install eli5-staging ./helm-chart \
+            --set image.tag=${{ github.sha }} \
+            --set environment=staging \
+            --set replicas=2 \
+            --set ingress.host=staging.eli5videoteacher.com \
+            --set database.host=${{ secrets.STAGING_DB_HOST }} \
+            --set redis.host=${{ secrets.STAGING_REDIS_HOST }} \
+            --namespace eli5-staging \
+            --create-namespace \
+            --wait \
+            --timeout=10m
+
+      - name: Run smoke tests against staging
+        run: |
+          # Wait for deployment to be ready
+          kubectl wait --for=condition=ready pod -l app=eli5-backend --timeout=300s -n eli5-staging
+          
+          # Run smoke tests
+          curl -f https://staging.eli5videoteacher.com/api/health || exit 1
+          curl -f https://staging.eli5videoteacher.com/ || exit 1
+
+      - name: Notify deployment status
+        uses: 8398a7/action-slack@v3
+        if: always()
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Integration Tests on Staging
+  staging-integration-tests:
+    name: Staging Integration Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests against staging
+        run: npm run test:integration:staging
+        env:
+          STAGING_API_URL: https://staging.eli5videoteacher.com/api
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+
+      - name: Run E2E tests against staging
+        run: |
+          cd frontend
+          npm ci
+          npx playwright install --with-deps
+          npm run test:e2e:staging
+        env:
+          BASE_URL: https://staging.eli5videoteacher.com
+
+  # Deploy to Production (Manual Approval Required)
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [staging-integration-tests]
+    environment:
+      name: production
+      url: https://eli5videoteacher.com
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Create deployment backup
+        run: |
+          aws eks update-kubeconfig --name eli5-production-cluster --region ${{ vars.AWS_REGION }}
+          kubectl get all -n eli5-production > deployment-backup-$(date +%Y%m%d-%H%M%S).yaml
+
+      - name: Deploy to EKS Production
+        run: |
+          # Blue-Green Deployment Strategy
+          helm upgrade --install eli5-production ./helm-chart \
+            --set image.tag=${{ github.sha }} \
+            --set environment=production \
+            --set replicas=5 \
+            --set ingress.host=eli5videoteacher.com \
+            --set database.host=${{ secrets.PRODUCTION_DB_HOST }} \
+            --set redis.host=${{ secrets.PRODUCTION_REDIS_HOST }} \
+            --set resources.limits.cpu=2000m \
+            --set resources.limits.memory=4Gi \
+            --set resources.requests.cpu=1000m \
+            --set resources.requests.memory=2Gi \
+            --namespace eli5-production \
+            --wait \
+            --timeout=15m
+
+      - name: Verify production deployment
+        run: |
+          # Health check
+          kubectl wait --for=condition=ready pod -l app=eli5-backend --timeout=300s -n eli5-production
+          
+          # Smoke tests
+          curl -f https://eli5videoteacher.com/api/health || exit 1
+          curl -f https://eli5videoteacher.com/ || exit 1
+          
+          # Performance check
+          curl -w "@curl-format.txt" -o /dev/null -s https://eli5videoteacher.com/api/health
+
+      - name: Update database if needed
+        run: |
+          # Run database migrations in production
+          kubectl exec -n eli5-production deployment/eli5-backend -- npm run db:migrate
+
+      - name: Warm up production cache
+        run: |
+          # Pre-warm frequently accessed endpoints
+          curl -s https://eli5videoteacher.com/api/health > /dev/null
+          curl -s https://eli5videoteacher.com/ > /dev/null
+
+      - name: Notify successful deployment
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author
+          text: '🚀 Production deployment successful!'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Rollback Production (Manual Trigger)
+  rollback-production:
+    name: Rollback Production
+    runs-on: ubuntu-latest
+    if: failure()
+    environment:
+      name: production
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Rollback to previous version
+        run: |
+          aws eks update-kubeconfig --name eli5-production-cluster --region ${{ vars.AWS_REGION }}
+          helm rollback eli5-production -n eli5-production
+
+      - name: Verify rollback
+        run: |
+          kubectl wait --for=condition=ready pod -l app=eli5-backend --timeout=300s -n eli5-production
+          curl -f https://eli5videoteacher.com/api/health || exit 1
+
+      - name: Notify rollback
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          custom_payload: |
+            {
+              text: "🔄 Production rollback completed",
+              attachments: [{
+                color: "warning",
+                fields: [{
+                  title: "Repository",
+                  value: "${{ github.repository }}",
+                  short: true
+                }, {
+                  title: "Trigger",
+                  value: "${{ github.event_name }}",
+                  short: true
+                }]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  # Post-deployment monitoring
+  post-deployment-monitoring:
+    name: Post-deployment Monitoring
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    steps:
+      - name: Setup monitoring alerts
+        run: |
+          # Configure CloudWatch alarms
+          aws cloudwatch put-metric-alarm \
+            --alarm-name "ELI5-HighErrorRate" \
+            --alarm-description "High error rate detected" \
+            --metric-name ErrorRate \
+            --namespace ELI5/Application \
+            --statistic Average \
+            --period 300 \
+            --threshold 5.0 \
+            --comparison-operator GreaterThanThreshold \
+            --evaluation-periods 2
+
+      - name: Run post-deployment tests
+        run: |
+          # Performance regression tests
+          curl -w "@curl-format.txt" -o /dev/null -s https://eli5videoteacher.com/api/health
+          
+          # Feature validation tests
+          curl -f https://eli5videoteacher.com/api/videos || exit 1
+
+      - name: Update deployment status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: context.payload.deployment.id,
+              state: 'success',
+              environment_url: 'https://eli5videoteacher.com',
+              description: 'Deployment completed successfully'
+            });
