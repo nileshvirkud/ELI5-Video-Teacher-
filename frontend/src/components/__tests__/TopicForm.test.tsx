@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '../test/utils/test-utils';
+import { render, screen, fireEvent, waitFor } from '../../test/utils/test-utils';
 import TopicForm from '../TopicForm';
-import { VideoGenerationRequest } from '../types';
+import { VideoGenerationRequest } from '../../types';
 
 describe('TopicForm Component', () => {
   const mockOnSubmit = vi.fn();

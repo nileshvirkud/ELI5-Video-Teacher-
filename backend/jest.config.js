@@ -19,6 +19,7 @@ module.exports = {
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
+  setupFiles: ['<rootDir>/tests/global.d.ts'],
   testTimeout: 30000,
   moduleNameMapping: {
     '^@/(.*)$': '<rootDir>/src/$1'

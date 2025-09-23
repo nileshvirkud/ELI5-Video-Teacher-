@@ -54,4 +54,4 @@ afterAll(async () => {
 });
 
 // Make prisma available globally for tests
-global.prisma = prisma;
+(global as any).prisma = prisma;
